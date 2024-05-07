@@ -27,6 +27,7 @@
 #include <boost/locale/encoding_utf.hpp>
 #include <list>
 #include <sstream>
+#include <algorithm>
 #include "base64.hpp"
 #include "pugixml.hpp"
 
@@ -42,8 +43,8 @@ namespace Plist {
 				int32_t _offsetByteSize;
 				int64_t _offsetTableOffset;
 
-				int32_t _objRefSize;
-				int32_t _refCount;
+				uint32_t _objRefSize;
+				uint32_t _refCount;
 		};
 
 		void writePlistBinary(
@@ -261,17 +262,17 @@ void writePlistBinary(
 {
 	using namespace std;
 	//int totalRefs =  countDictionary(message);
-	int totalRefs =  countAny(message) - 1;
+	int32_t totalRefs =  countAny(message) - 1;
 	d._refCount = totalRefs;
 
-	d._objRefSize = regulateNullBytes(intToBytes<int32_t>(d._refCount, hostLittleEndian()), 1).size();
+	d._objRefSize = (uint32_t)regulateNullBytes(intToBytes<int32_t>(d._refCount, hostLittleEndian()), 1).size();
 
 	//writeBinaryDictionary(d, message);
 	writeBinary(d, message);
 	writeBinaryString(d, "bplist00", false);
 	d._offsetTableOffset = (int64_t) d._objectTable.size();
-	d._offsetTable.push_back(d._objectTable.size() - 8);
-	d._offsetByteSize = regulateNullBytes(intToBytes<int>(d._offsetTable.back(), hostLittleEndian()), 1).size();
+	d._offsetTable.push_back((uint32_t)d._objectTable.size() - 8);
+	d._offsetByteSize = (int32_t)regulateNullBytes(intToBytes<int>(d._offsetTable.back(), hostLittleEndian()), 1).size();
 
 	vector<unsigned char> offsetBytes;
 
@@ -279,7 +280,7 @@ void writePlistBinary(
 
 	for(unsigned int i = 0; i < d._offsetTable.size(); ++i)
 	{
-		d._offsetTable[i] = d._objectTable.size() - d._offsetTable[i];
+		d._offsetTable[i] = (int32_t)d._objectTable.size() - d._offsetTable[i];
 		vector<unsigned char> buffer = regulateNullBytes(intToBytes<int>(d._offsetTable[i], hostLittleEndian()), d._offsetByteSize);
 		//reverse(buffer.begin(), buffer.end());
 
@@ -481,7 +482,7 @@ std::vector<unsigned char> writeBinaryArray(PlistHelperData& d, const array_type
 			++it)
 	{
 		writeBinary(d, *it);
-		d._offsetTable.push_back(d._objectTable.size());
+		d._offsetTable.push_back((int32_t)d._objectTable.size());
 		refs.push_back(d._refCount);
 		d._refCount--;
 	}
@@ -527,7 +528,7 @@ std::vector<unsigned char> writeBinaryDictionary(PlistHelperData& d, const dicti
 			++it)
 	{
 		writeBinary(d, it->second);
-		d._offsetTable.push_back(d._objectTable.size());
+		d._offsetTable.push_back((int32_t)d._objectTable.size());
 		refs.push_back(d._refCount);
 		d._refCount--;
 	}
@@ -537,7 +538,7 @@ std::vector<unsigned char> writeBinaryDictionary(PlistHelperData& d, const dicti
 			++it)
 	{
 		writeBinary(d, it->first);
-		d._offsetTable.push_back(d._objectTable.size());
+		d._offsetTable.push_back((int32_t)d._objectTable.size());
 		refs.push_back(d._refCount);
 		d._refCount--;
 	}
@@ -577,9 +578,9 @@ std::vector<unsigned char> writeBinaryDouble(PlistHelperData& d, double value)
 {
 	using namespace std;
 	vector<unsigned char> buffer = regulateNullBytes(doubleToBytes(value, hostLittleEndian()), 4);
-	buffer.resize(nextpow2(buffer.size()), 0);
+	buffer.resize(nextpow2((uint32_t)buffer.size()), 0);
 
-	unsigned char header = 0x20 | ilog2(buffer.size());
+	unsigned char header = 0x20 | ilog2((uint32_t)buffer.size());
 	buffer.push_back(header);
 	reverse(buffer.begin(), buffer.end());
 
@@ -626,9 +627,9 @@ std::vector<unsigned char> writeBinaryInteger(PlistHelperData& d, int64_t value,
 
 	vector<unsigned char> buffer = intToBytes<int64_t>(value, hostLittleEndian());
 	buffer = regulateNullBytes(intToBytes<int64_t>(value, hostLittleEndian()), 1);
-	buffer.resize(nextpow2(buffer.size()), 0);
+	buffer.resize(nextpow2((uint32_t)buffer.size()), 0);
 
-	unsigned char header = 0x10 | ilog2(buffer.size());
+	unsigned char header = 0x10 | ilog2((uint32_t)buffer.size());
 	buffer.push_back(header);
 	reverse(buffer.begin(), buffer.end());
 
@@ -698,7 +699,7 @@ int countArray(const array_type& array)
 
 void readPlist(std::istream& stream, boost::any& message)
 {
-	int start = stream.tellg();
+	int start = (int32_t)stream.tellg();
 	stream.seekg(0, std::ifstream::end);
 	int size = ((int) stream.tellg()) - start;
 	if(size > 0)
@@ -966,7 +967,7 @@ array_type  parseBinaryArray(const PlistHelperData& d, int objRef)
 {
 	using namespace std;
 	vector<int32_t> refs = getRefsForContainers(d, objRef);
-	int32_t refCount = refs.size();
+	int32_t refCount = (int32_t)refs.size();
 
 	array_type array;
 	for(int i = 0; i < refCount; ++i)
@@ -979,7 +980,7 @@ dictionary_type parseBinaryDictionary(const PlistHelperData& d, int objRef)
 {
 	using namespace std;
 	vector<int32_t> refs = getRefsForContainers(d, objRef);
-	int32_t refCount = refs.size() / 2;
+	int32_t refCount = (int32_t)refs.size() / 2;
 
 	dictionary_type dict;
 	for (int i = 0; i < refCount; i++)
@@ -1173,7 +1174,7 @@ std::vector<unsigned char> doubleToBytes(double val, bool littleEndian)
 template<typename IntegerType>
 std::vector<unsigned char> intToBytes(IntegerType val, bool littleEndian)
 {
-	unsigned int numBytes = sizeof(val);
+	uint64_t numBytes = sizeof(val);
 	std::vector<unsigned char> bytes(numBytes);
 
 	for(unsigned n = 0; n < numBytes; ++n)
